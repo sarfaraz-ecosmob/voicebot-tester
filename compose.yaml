@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-voicebot}
+      POSTGRES_USER: ${POSTGRES_USER:-voicebot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-local-password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [app-net]
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://voicebot:change-this-local-password@postgres:5432/voicebot}
+      CORS_ORIGINS: http://localhost:5173
+      SCENARIOS_DIR: /app/scenarios
+      # OpenRouter (AI test runs). Set OPENROUTER_API_KEY in .env; empty keeps
+      # the API in mock mode.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      OPENROUTER_SITE_URL: ${OPENROUTER_SITE_URL:-}
+      OPENROUTER_APP_NAME: ${OPENROUTER_APP_NAME:-Voicebot Testing}
+      # Asterisk integration: call recordings (shared volume) + ARI status proxy
+      RECORDINGS_DIR: /recordings
+      ASTERISK_ARI_URL: http://asterisk:8080/ari
+      ASTERISK_ARI_USER: ${ASTERISK_ARI_USER:-voicebot}
+      ASTERISK_ARI_PASSWORD: ${ASTERISK_ARI_PASSWORD:-change-this-ari-password}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./scenarios:/app/scenarios:ro
+      - asterisk-monitor:/recordings:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [app-net]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on: [api]
+    networks: [app-net]
+
+  # Local PBX for the browser SIP softphone panel.
+  #   Register: ws://localhost:8080/ws, extension 1001, password voicebot-1001
+  #   Dial:     6000 (echo) / 7000 (mock voicebot prompt) / 7001 (future ARI app)
+  asterisk:
+    image: andrius/asterisk:23
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      # Address advertised in SDP for RTP. 127.0.0.1 = browser on this machine.
+      ASTERISK_EXTERNAL_MEDIA_ADDRESS: ${ASTERISK_EXTERNAL_MEDIA_ADDRESS:-127.0.0.1}
+    entrypoint: ["/bin/bash", "/opt/voicebot/entrypoint.sh"]
+    command: ["/usr/sbin/asterisk", "-vvvdddf", "-T", "-W", "-U", "asterisk", "-p"]
+    volumes:
+      - ./asterisk/conf:/opt/voicebot/conf:ro
+      - ./asterisk/entrypoint.sh:/opt/voicebot/entrypoint.sh:ro
+      - asterisk-certs:/etc/asterisk/certs
+      - asterisk-monitor:/var/lib/asterisk/monitor
+    ports:
+      - "127.0.0.1:8080:8080"          # ws://  (SIP over plain WebSocket)
+      - "127.0.0.1:8089:8089"          # wss:// (SIP over TLS WebSocket)
+      - "127.0.0.1:5060:5060/udp"      # SIP for optional external softphones
+      - "127.0.0.1:5060:5060/tcp"
+      - "127.0.0.1:10000-10100:10000-10100/udp"  # RTP media range (rtp.conf)
+    networks: [app-net]
+
+networks:
+  app-net:
+
+volumes:
+  postgres-data:
+  asterisk-certs:
+  asterisk-monitor:

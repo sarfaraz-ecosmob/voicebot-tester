@@ -1,0 +1,18 @@
+name: Weekend booking
+description: Validates that weekend appointment requests are handled correctly.
+version: 1
+timezone: Asia/Kolkata
+required_fields:
+  - customer_name
+  - appointment_date
+  - appointment_time
+  - reason
+mock_slot:
+  date: "2026-10-26"
+  time: "10:00"
+  available: true
+assertions:
+  - intent equals book_appointment
+  - all_required_fields_present
+  - availability_checked
+  - booking_status equals confirmed

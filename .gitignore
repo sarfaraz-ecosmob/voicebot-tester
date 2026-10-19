@@ -1,0 +1,15 @@
+# Secrets / local config
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+voicebot.db
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store

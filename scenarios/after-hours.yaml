@@ -1,0 +1,18 @@
+name: After-hours booking
+description: Validates that appointment requests outside business hours are rejected.
+version: 1
+timezone: Asia/Kolkata
+required_fields:
+  - customer_name
+  - appointment_date
+  - appointment_time
+  - reason
+mock_slot:
+  date: "2026-10-23"
+  time: "18:30"
+  available: false
+assertions:
+  - intent equals book_appointment
+  - all_required_fields_present
+  - availability_checked
+  - booking_status equals unavailable
